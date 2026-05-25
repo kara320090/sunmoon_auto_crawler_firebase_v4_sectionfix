@@ -1,0 +1,30 @@
+name: Update Sunmoon Food Menu
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 23 * * *"
+
+jobs:
+  update-food:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install -r requirements.txt
+
+      - name: Crawl and update Firebase
+        env:
+          FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
+          FIREBASE_AUTH_TOKEN: ${{ secrets.FIREBASE_AUTH_TOKEN }}
+        run: python scripts/sunmoon_food_to_firebase.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sunmoon-food-latest
+          path: outputs/sunmoon_food_latest.json

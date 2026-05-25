@@ -1,0 +1,16 @@
+v4 수정내역
+
+문제:
+- 업로드된 sunmoon_food_latest.json에서 student/menuText가 비어 있음.
+- student 메뉴가 orange에 들어감.
+- orange 메뉴가 main에 들어감.
+- 교직원식당이 오늘 없는 상태인데 main에 orange 메뉴가 붙어 들어감.
+
+원인:
+- 선문대 페이지의 today 구간 중 빈 구간이 먼저 잡히면서 섹션이 한 칸씩 밀림.
+
+수정:
+- today 기준 후보 섹션을 모두 만든 뒤 실제 메뉴가 2개 이상 있는 섹션만 유효 처리.
+- 유효 섹션을 student → orange → main 순서로 재매핑.
+- 교직원식당 식단이 없으면 main은 '오늘 등록된 식단이 없습니다.' 처리.
+- 순두부지깨/함밤카레/떢볶이 오탈자 보정.
