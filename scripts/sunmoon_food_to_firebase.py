@@ -77,7 +77,7 @@ TEXT_FIXES = {
 class LegacyTLSAdapter(HTTPAdapter):
     """
     선문대 서버 SSL handshake 실패 대응용 adapter.
-    기본 requests 요청이 실패할 때만 fallback으로 사용한다.
+    기본 requests 요청이 실패할 때 fallback으로 사용한다.
     """
 
     def init_poolmanager(self, connections, maxsize, block=False, **pool_kwargs):
@@ -340,10 +340,30 @@ def find_restaurant_tab_end(lines: List[str]) -> int:
     return 0
 
 
+def normalize_section(section: List[str]) -> List[str]:
+    cleaned = []
+
+    for line in section:
+        line = clean_line(line)
+
+        if is_junk(line):
+            continue
+
+        if "맛집 정보" in line:
+            break
+
+        if "SUN MOON University" in line:
+            break
+
+        cleaned.append(line)
+
+    return cleaned
+
+
 def count_real_menu_items(section: List[str]) -> int:
     """
     섹션 안에 실제 메뉴로 볼 수 있는 줄이 몇 개인지 센다.
-    빈 today 블록 때문에 식당 데이터가 한 칸씩 밀리는 문제를 방지하기 위한 함수.
+    빈 today 블록 때문에 식당 데이터가 한 칸씩 밀리는 문제를 방지한다.
     """
 
     count = 0
@@ -414,26 +434,6 @@ def split_food_sections(lines: List[str]) -> List[List[str]]:
             sections.append([])
 
     return sections
-
-
-def normalize_section(section: List[str]) -> List[str]:
-    cleaned = []
-
-    for line in section:
-        line = clean_line(line)
-
-        if is_junk(line):
-            continue
-
-        if "맛집 정보" in line:
-            break
-
-        if "SUN MOON University" in line:
-            break
-
-        cleaned.append(line)
-
-    return cleaned
 
 
 def build_menu_text(lines: List[str]) -> str:
@@ -559,7 +559,10 @@ def upload_to_firebase(
     if auth_token:
         params["auth"] = auth_token
 
-    response = requests.patch(
+    # 중요:
+    # PUT은 /sunmoon 아래 데이터를 오늘 크롤링 결과로 완전히 교체한다.
+    # 따라서 월요일 식단이 화요일에 남는 문제를 방지할 수 있다.
+    response = requests.put(
         endpoint,
         params=params,
         json=payload,
