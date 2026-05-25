@@ -494,7 +494,7 @@ def upload_to_firebase(payload: Dict, database_url: str, auth_token: Optional[st
         raise ValueError("FIREBASE_DATABASE_URL 환경변수가 비어 있습니다.")
 
     database_url = database_url.rstrip("/")
-    endpoint = f"{database_url}/.json"
+    endpoint = f"{database_url}/sunmoon.json"
     params = {}
 
     if auth_token:
