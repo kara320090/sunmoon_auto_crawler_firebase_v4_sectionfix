@@ -46,8 +46,17 @@ RESTAURANTS = [
 ]
 
 CATEGORY_WORDS = {
-    "한식", "양식", "분식", "일식", "점심", "저녁",
-    "조식", "중식", "석식", "메뉴", "오늘의 식단"
+    "한식",
+    "양식",
+    "분식",
+    "일식",
+    "점심",
+    "저녁",
+    "조식",
+    "중식",
+    "석식",
+    "메뉴",
+    "오늘의 식단",
 }
 
 JUNK_PATTERNS = [
@@ -66,7 +75,10 @@ TEXT_FIXES = {
 
 
 class LegacyTLSAdapter(HTTPAdapter):
-    """선문대 서버 SSL handshake 실패 대응용 adapter."""
+    """
+    선문대 서버 SSL handshake 실패 대응용 adapter.
+    기본 requests 요청이 실패할 때만 fallback으로 사용한다.
+    """
 
     def init_poolmanager(self, connections, maxsize, block=False, **pool_kwargs):
         ctx = ssl.create_default_context()
@@ -86,14 +98,19 @@ class LegacyTLSAdapter(HTTPAdapter):
             except Exception:
                 pass
 
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
         pool_kwargs["ssl_context"] = ctx
         return super().init_poolmanager(connections, maxsize, block=block, **pool_kwargs)
 
 
 def clean_line(line: str) -> str:
     line = re.sub(r"\s+", " ", line).strip()
+
     for wrong, right in TEXT_FIXES.items():
         line = line.replace(wrong, right)
+
     return line
 
 
@@ -162,6 +179,7 @@ def fetch_with_requests(url: str, legacy_tls: bool = False) -> str:
         verify=False if legacy_tls else True,
         allow_redirects=True,
     )
+
     response.raise_for_status()
     response.encoding = response.apparent_encoding or response.encoding or "utf-8"
     return response.text
@@ -179,6 +197,7 @@ def fetch_with_curl_cffi(url: str) -> str:
             "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
         },
     )
+
     response.raise_for_status()
     return response.text
 
@@ -196,7 +215,10 @@ def fetch_with_curl_command(url: str) -> str:
         "--http1.1",
         "--tlsv1.2",
         "-A",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/148 Safari/537.36",
+        (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 Chrome/148 Safari/537.36"
+        ),
         "--max-time",
         "30",
         url,
@@ -284,6 +306,7 @@ def fetch_html(url: str) -> str:
         "3) PowerShell에서 $env:SUNMOON_FOOD_HTML_FILE='C:\\Users\\soma\\Desktop\\food.html'\n"
         "4) 다시 실행"
     )
+
     raise RuntimeError(error_message)
 
 
@@ -318,18 +341,28 @@ def find_restaurant_tab_end(lines: List[str]) -> int:
 
 
 def count_real_menu_items(section: List[str]) -> int:
-    """섹션 안에 실제 메뉴로 볼 수 있는 줄이 몇 개인지 센다."""
+    """
+    섹션 안에 실제 메뉴로 볼 수 있는 줄이 몇 개인지 센다.
+    빈 today 블록 때문에 식당 데이터가 한 칸씩 밀리는 문제를 방지하기 위한 함수.
+    """
+
     count = 0
+
     for line in normalize_section(section):
         if not line:
             continue
+
         if line in CATEGORY_WORDS:
             continue
+
         if len(line) > 35:
             continue
+
         if any(word in line for word in ["운영", "공지", "식단 페이지", "확인", "Today"]):
             continue
+
         count += 1
+
     return count
 
 
@@ -338,9 +371,11 @@ def split_food_sections(lines: List[str]) -> List[List[str]]:
     today 기준 후보 섹션을 모두 만든 뒤 실제 메뉴가 거의 없는 빈 섹션을 제외한다.
     빈 today 블록 때문에 student/orange/main 데이터가 한 칸씩 밀리는 문제를 방지한다.
     """
+
     start_after_tabs = find_restaurant_tab_end(lines)
 
     starts = []
+
     for i in range(start_after_tabs, len(lines)):
         if "today" in lines[i].lower():
             starts.append(i)
@@ -366,9 +401,11 @@ def split_food_sections(lines: List[str]) -> List[List[str]]:
         if non_empty:
             while len(non_empty) < len(RESTAURANTS):
                 non_empty.append([])
+
             return non_empty[:len(RESTAURANTS)]
 
     sections = []
+
     for restaurant in RESTAURANTS:
         try:
             index = lines.index(restaurant["source_name"], start_after_tabs)
@@ -400,16 +437,30 @@ def normalize_section(section: List[str]) -> List[str]:
 
 
 def build_menu_text(lines: List[str]) -> str:
+    """
+    Firebase에 저장할 menuText 생성.
+
+    변경 사항:
+    - 한식/양식/분식/일식/중식/석식/점심/저녁 같은 분류명은 저장하지 않는다.
+    - 실제 메뉴명만 줄바꿈으로 저장한다.
+    """
+
     if not lines:
         return "오늘 등록된 식단이 없습니다."
 
     result = []
 
     for line in lines:
-        if line in CATEGORY_WORDS and result:
-            result.append("")
+        if line in CATEGORY_WORDS:
+            continue
+
+        if not line:
+            continue
 
         result.append(line)
+
+    if not result:
+        return "오늘 등록된 식단이 없습니다."
 
     return "\n".join(result).strip()
 
@@ -489,18 +540,31 @@ def build_payload(url: str) -> Dict:
     }
 
 
-def upload_to_firebase(payload: Dict, database_url: str, auth_token: Optional[str] = None) -> None:
+def upload_to_firebase(
+    payload: Dict,
+    database_url: str,
+    auth_token: Optional[str] = None,
+) -> None:
     if not database_url:
         raise ValueError("FIREBASE_DATABASE_URL 환경변수가 비어 있습니다.")
 
     database_url = database_url.rstrip("/")
+
+    # App Inventor/Web 컴포넌트에서 /sunmoon 아래 데이터를 읽도록 하기 위해
+    # Firebase 루트가 아니라 /sunmoon.json에 업로드한다.
     endpoint = f"{database_url}/sunmoon.json"
+
     params = {}
 
     if auth_token:
         params["auth"] = auth_token
 
-    response = requests.patch(endpoint, params=params, json=payload, timeout=20)
+    response = requests.patch(
+        endpoint,
+        params=params,
+        json=payload,
+        timeout=20,
+    )
 
     if response.status_code >= 400:
         raise RuntimeError(
