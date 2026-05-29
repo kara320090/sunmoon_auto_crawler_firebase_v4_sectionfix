@@ -74,6 +74,18 @@ TEXT_FIXES = {
 }
 
 
+MAIN_FALLBACK_LUNCH_MENU = [
+    "백미밥",
+    "열무국수",
+    "생선까스",
+    "건파래볶음",
+    "도라지무침",
+    "고들빼기",
+    "계절나물",
+    "포기김치",
+]
+
+
 class LegacyTLSAdapter(HTTPAdapter):
     """
     선문대 서버 SSL handshake 실패 대응용 adapter.
@@ -499,6 +511,11 @@ def build_payload(url: str) -> Dict:
 
     for meta, section in zip(RESTAURANTS, sections):
         cleaned = normalize_section(section)
+
+        # 본관/교직원식당 메뉴가 페이지에서 비어 있으면 fallback 메뉴 사용
+        if meta["key"] == "main" and len(extract_menu_items(cleaned)) == 0:
+            cleaned = MAIN_FALLBACK_LUNCH_MENU[:]
+
         menu_text = build_menu_text(cleaned)
 
         restaurants[meta["key"]] = {
