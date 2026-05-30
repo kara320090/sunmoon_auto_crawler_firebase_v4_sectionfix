@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 from __future__ import annotations
@@ -19,79 +19,62 @@ from requests.adapters import HTTPAdapter
 
 
 KST = timezone(timedelta(hours=9))
-DEFAULT_URL = "https://smi.sunmoon.ac.kr/PageN/ContentN/Food.aspx"
 
-RESTAURANTS = [
-    {
-        "key": "student",
-        "app_name": "학생회관식당",
-        "source_name": "학생회관식당",
-        "location": "학생회관 식당",
-        "default_open_time": "운영시간은 학교 식단 페이지 기준으로 확인",
-    },
-    {
-        "key": "orange",
-        "app_name": "오렌지식당",
-        "source_name": "오렌지식당",
-        "location": "오렌지식당",
-        "default_open_time": "운영시간은 학교 식단 페이지 기준으로 확인",
-    },
-    {
-        "key": "main",
-        "app_name": "본관식당",
-        "source_name": "교직원식당",
-        "location": "본관 또는 교직원식당",
-        "default_open_time": "운영시간은 학교 식단 페이지 기준으로 확인",
-    },
-]
-
-CATEGORY_WORDS = {
-    "한식",
-    "양식",
-    "분식",
-    "일식",
-    "점심",
-    "저녁",
-    "조식",
-    "중식",
-    "석식",
-    "메뉴",
-    "오늘의 식단",
+RESTAURANT_URLS = {
+    "main": "https://lily.sunmoon.ac.kr/Page2/UnivLife/WeekFoodMenu.aspx?ca=001",
+    "orange": "https://lily.sunmoon.ac.kr/Page2/UnivLife/WeekFoodMenu.aspx?ca=002",
+    "student": "https://lily.sunmoon.ac.kr/Page2/UnivLife/WeekFoodMenu.aspx?ca=003",
 }
 
-JUNK_PATTERNS = [
-    r"^open_in_new$",
-    r"^##$",
-    r"^\*$",
-    r"^-$",
-    r"^arrow_upward$",
-]
+RESTAURANTS = {
+    "student": {
+        "name": "학생회관식당",
+        "sourceName": "학생회관 식당",
+        "location": "학생회관 식당",
+        "openTime": "11:00 ~ 15:00",
+    },
+    "orange": {
+        "name": "오렌지식당",
+        "sourceName": "오렌지식당",
+        "location": "오렌지식당",
+        "openTime": "한식/분식 10:30 ~ 16:00, 돈가스/우동 10:30 ~ 15:00",
+    },
+    "main": {
+        "name": "본관식당",
+        "sourceName": "본관 교직원식당",
+        "location": "본관 교직원식당",
+        "openTime": "점심 11:30 ~ 13:30, 저녁 17:30 ~ 18:30",
+    },
+}
+
+CATEGORY_WORDS = {
+    "한식", "양식", "분식", "일식", "즉석", "양식&분식",
+    "점심", "저녁", "조식", "중식", "석식",
+    "메뉴", "식단", "일자", "오늘의 식단",
+}
 
 TEXT_FIXES = {
     "순두부지깨": "순두부찌개",
     "함밤카레": "함박카레",
     "떢볶이": "떡볶이",
+    "떡볶이 & 오뎅 SET": "떡볶이&오뎅 SET",
+    "김밥 & 오뎅 SET": "김밥&오뎅 SET",
+}
+
+STATIC_INGREDIENTS = {
+    "student": {
+        "text": "[학생회관식당 성분/주의 정보]\n\n메뉴별 원재료 정보는 고정 메뉴 기준으로 별도 관리합니다.\n돼지고기, 육류 육수, 우유, 계란, 밀, 대두, 해산물 등은 실제 조리 상황에 따라 달라질 수 있으므로 식당에 확인이 필요합니다."
+    },
+    "orange": {
+        "text": "[오렌지식당 성분/주의 정보]\n\n메뉴별 원재료 정보는 고정 메뉴 기준으로 별도 관리합니다.\n제육, 돈가스, 순대국밥, 부대찌개 등은 돼지고기 포함 가능성이 높으므로 이슬람 식단 이용자는 주의가 필요합니다."
+    },
+    "main": {
+        "text": "[본관/교직원식당 성분/주의 정보]\n\n본관/교직원식당은 식단이 매일 변경되므로 고정 성분표를 제공하지 않습니다.\n알레르기, 이슬람 식단, 채식 등 식이 제한이 있는 경우 실제 배식 전 식당에 직접 확인해 주세요."
+    },
 }
 
 
-MAIN_FALLBACK_LUNCH_MENU = [
-    "백미밥",
-    "열무국수",
-    "생선까스",
-    "건파래볶음",
-    "도라지무침",
-    "고들빼기",
-    "계절나물",
-    "포기김치",
-]
-
-
 class LegacyTLSAdapter(HTTPAdapter):
-    """
-    선문대 서버 SSL handshake 실패 대응용 adapter.
-    기본 requests 요청이 실패할 때 fallback으로 사용한다.
-    """
-
     def init_poolmanager(self, connections, maxsize, block=False, **pool_kwargs):
         ctx = ssl.create_default_context()
 
@@ -112,37 +95,91 @@ class LegacyTLSAdapter(HTTPAdapter):
 
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
-
         pool_kwargs["ssl_context"] = ctx
+
         return super().init_poolmanager(connections, maxsize, block=block, **pool_kwargs)
 
 
-def clean_line(line: str) -> str:
-    line = re.sub(r"\s+", " ", line).strip()
+def clean_text(text: str) -> str:
+    text = re.sub(r"\s+", " ", text).strip()
 
     for wrong, right in TEXT_FIXES.items():
-        line = line.replace(wrong, right)
+        text = text.replace(wrong, right)
 
-    return line
+    return text
+
+
+def split_cell_text(text: str) -> List[str]:
+    result = []
+
+    for raw in text.splitlines():
+        line = clean_text(raw)
+
+        if not line:
+            continue
+
+        if line in CATEGORY_WORDS:
+            continue
+
+        if is_date_or_day(line):
+            continue
+
+        if is_junk(line):
+            continue
+
+        result.append(line)
+
+    return result
+
+
+def is_date_or_day(line: str) -> bool:
+    if re.match(r"^\d{2}월\s*\d{1,2}일", line):
+        return True
+
+    if re.match(r"^\([월화수목금토일]\)$", line):
+        return True
+
+    if re.match(r"^\d{4}-\d{2}-\d{2}", line):
+        return True
+
+    return False
 
 
 def is_junk(line: str) -> bool:
     if not line:
         return True
 
-    for pattern in JUNK_PATTERNS:
-        if re.match(pattern, line, flags=re.IGNORECASE):
-            return True
+    junk_keywords = [
+        "개인정보처리방침",
+        "이메일",
+        "대학정보공시",
+        "찾아오시는길",
+        "원격지원",
+        "교내웹사이트",
+        "교내전화번호",
+        "교직원찾기",
+        "SUN MOON",
+        "Tel",
+        "Fax",
+        "All rights reserved",
+        "선문바로가기",
+        "운영시간",
+        "메뉴가격",
+        "운영안내",
+        "기타사항",
+        "학사일정",
+        "토요일/일요일",
+        "방학",
+        "금액",
+        "카드",
+        "현금",
+        "키오스크",
+    ]
 
-    lower = line.lower()
-
-    if lower.startswith("today"):
+    if any(keyword in line for keyword in junk_keywords):
         return True
 
-    if line.startswith("- today"):
-        return True
-
-    if "방학기간중에는 운영을 하지 않습니다" in line:
+    if line in CATEGORY_WORDS:
         return True
 
     return False
@@ -194,6 +231,7 @@ def fetch_with_requests(url: str, legacy_tls: bool = False) -> str:
 
     response.raise_for_status()
     response.encoding = response.apparent_encoding or response.encoding or "utf-8"
+
     return response.text
 
 
@@ -205,12 +243,11 @@ def fetch_with_curl_cffi(url: str) -> str:
         impersonate="chrome120",
         timeout=25,
         verify=False,
-        headers={
-            "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
-        },
+        headers={"Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8"},
     )
 
     response.raise_for_status()
+
     return response.text
 
 
@@ -227,10 +264,7 @@ def fetch_with_curl_command(url: str) -> str:
         "--http1.1",
         "--tlsv1.2",
         "-A",
-        (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 Chrome/148 Safari/537.36"
-        ),
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/148 Safari/537.36",
         "--max-time",
         "30",
         url,
@@ -244,33 +278,12 @@ def fetch_with_curl_command(url: str) -> str:
     )
 
     if result.returncode != 0:
-        error_text = result.stderr.decode("utf-8", errors="replace")
-        raise RuntimeError(error_text[:1000])
+        raise RuntimeError(result.stderr.decode("utf-8", errors="replace")[:1000])
 
     return decode_bytes(result.stdout)
 
 
-def read_local_html_if_set() -> Optional[str]:
-    html_file = os.getenv("SUNMOON_FOOD_HTML_FILE", "").strip()
-
-    if not html_file:
-        return None
-
-    path = Path(html_file)
-
-    if not path.exists():
-        raise FileNotFoundError(f"SUNMOON_FOOD_HTML_FILE 경로가 없습니다: {path}")
-
-    print(f"[INFO] 로컬 HTML 파일 사용: {path}")
-    return decode_bytes(path.read_bytes())
-
-
 def fetch_html(url: str) -> str:
-    local_html = read_local_html_if_set()
-
-    if local_html:
-        return local_html
-
     errors = []
 
     for target_url in candidate_urls(url):
@@ -283,21 +296,15 @@ def fetch_html(url: str) -> str:
 
         for method_name, request_func in methods:
             try:
-                print(f"[INFO] 식단 페이지 요청 시도: {method_name} / {target_url}")
+                print(f"[INFO] 요청 시도: {method_name} / {target_url}")
                 html = request_func()
 
-                has_food_keyword = (
-                    "학생회관식당" in html
-                    or "오렌지식당" in html
-                    or "오늘의 식단" in html
-                )
-
-                if has_food_keyword:
-                    print(f"[OK] 식단 페이지 요청 성공: {method_name}")
+                if "금주의식단" in html or "식단" in html:
+                    print(f"[OK] 요청 성공: {method_name}")
                     return html
 
                 if len(html) > 500:
-                    print(f"[WARN] 식당 키워드는 없지만 HTML을 받았습니다: {method_name}")
+                    print(f"[WARN] 식단 키워드는 없지만 HTML을 받았습니다: {method_name}")
                     return html
 
                 raise RuntimeError("응답 HTML이 너무 짧습니다.")
@@ -307,233 +314,163 @@ def fetch_html(url: str) -> str:
                 errors.append(message)
                 print(f"[WARN] 실패: {message}")
 
-    error_message = (
-        "선문대 식단 페이지를 가져오지 못했습니다.\n"
-        "원인 후보: 학교 서버 SSL/TLS 호환 문제, 네트워크 차단, 페이지 구조 변경.\n\n"
-        "시도한 오류 목록:\n- "
-        + "\n- ".join(errors)
-        + "\n\n긴급 우회 방법:\n"
-        "1) 브라우저에서 https://smi.sunmoon.ac.kr/PageN/ContentN/Food.aspx 열기\n"
-        "2) Ctrl+S로 food.html 저장\n"
-        "3) PowerShell에서 $env:SUNMOON_FOOD_HTML_FILE='C:\\Users\\soma\\Desktop\\food.html'\n"
-        "4) 다시 실행"
-    )
-
-    raise RuntimeError(error_message)
+    raise RuntimeError("식단 페이지를 가져오지 못했습니다.\n- " + "\n- ".join(errors))
 
 
-def html_to_lines(html: str) -> List[str]:
+def get_table_rows(html: str) -> List[List[str]]:
     soup = BeautifulSoup(html, "html.parser")
+    table = soup.find("table")
 
-    for tag in soup(["script", "style", "noscript"]):
-        tag.decompose()
+    if table is None:
+        return []
 
-    text = soup.get_text("\n")
-    lines = [clean_line(line) for line in text.splitlines()]
-    return [line for line in lines if line]
+    rows = []
 
+    for tr in table.find_all("tr"):
+        cells = []
 
-def find_restaurant_tab_end(lines: List[str]) -> int:
-    indices = []
+        for cell in tr.find_all(["th", "td"]):
+            text = cell.get_text("\n", strip=True)
+            cells.append(text)
 
-    for restaurant in RESTAURANTS:
-        try:
-            indices.append(lines.index(restaurant["source_name"]))
-        except ValueError:
-            pass
+        if cells:
+            rows.append(cells)
 
-    if indices:
-        return max(indices) + 1
-
-    for i, line in enumerate(lines):
-        if "오늘의 식단" in line:
-            return i + 1
-
-    return 0
+    return rows
 
 
-def normalize_section(section: List[str]) -> List[str]:
-    cleaned = []
-
-    for line in section:
-        line = clean_line(line)
-
-        if is_junk(line):
-            continue
-
-        if "맛집 정보" in line:
-            break
-
-        if "SUN MOON University" in line:
-            break
-
-        cleaned.append(line)
-
-    return cleaned
-
-
-def count_real_menu_items(section: List[str]) -> int:
-    """
-    섹션 안에 실제 메뉴로 볼 수 있는 줄이 몇 개인지 센다.
-    빈 today 블록 때문에 식당 데이터가 한 칸씩 밀리는 문제를 방지한다.
-    """
-
-    count = 0
-
-    for line in normalize_section(section):
-        if not line:
-            continue
-
-        if line in CATEGORY_WORDS:
-            continue
-
-        if len(line) > 35:
-            continue
-
-        if any(word in line for word in ["운영", "공지", "식단 페이지", "확인", "Today"]):
-            continue
-
-        count += 1
-
-    return count
-
-
-def split_food_sections(lines: List[str]) -> List[List[str]]:
-    """
-    today 기준 후보 섹션을 모두 만든 뒤 실제 메뉴가 거의 없는 빈 섹션을 제외한다.
-    빈 today 블록 때문에 student/orange/main 데이터가 한 칸씩 밀리는 문제를 방지한다.
-    """
-
-    start_after_tabs = find_restaurant_tab_end(lines)
-
-    starts = []
-
-    for i in range(start_after_tabs, len(lines)):
-        if "today" in lines[i].lower():
-            starts.append(i)
-
-    if starts:
-        candidates = []
-
-        for index, start in enumerate(starts):
-            end = starts[index + 1] if index + 1 < len(starts) else len(lines)
-
-            for j in range(start + 1, end):
-                if "맛집 정보" in lines[j]:
-                    end = j
-                    break
-
-            candidates.append(lines[start:end])
-
-        non_empty = [
-            section for section in candidates
-            if count_real_menu_items(section) >= 2
-        ]
-
-        if non_empty:
-            while len(non_empty) < len(RESTAURANTS):
-                non_empty.append([])
-
-            return non_empty[:len(RESTAURANTS)]
-
-    sections = []
-
-    for restaurant in RESTAURANTS:
-        try:
-            index = lines.index(restaurant["source_name"], start_after_tabs)
-            sections.append(lines[index:index + 80])
-        except ValueError:
-            sections.append([])
-
-    return sections
-
-
-def build_menu_text(lines: List[str]) -> str:
-    """
-    Firebase에 저장할 menuText 생성.
-
-    변경 사항:
-    - 한식/양식/분식/일식/중식/석식/점심/저녁 같은 분류명은 저장하지 않는다.
-    - 실제 메뉴명만 줄바꿈으로 저장한다.
-    """
-
-    if not lines:
-        return "오늘 등록된 식단이 없습니다."
-
+def unique_keep_order(items: List[str]) -> List[str]:
+    seen = set()
     result = []
 
-    for line in lines:
-        if line in CATEGORY_WORDS:
+    for item in items:
+        item = clean_text(item)
+
+        if not item:
             continue
 
-        if not line:
+        if item in seen:
             continue
 
-        result.append(line)
+        seen.add(item)
+        result.append(item)
 
-    if not result:
-        return "오늘 등록된 식단이 없습니다."
-
-    return "\n".join(result).strip()
+    return result
 
 
-def extract_menu_items(lines: List[str]) -> List[str]:
+def extract_static_menu(rows: List[List[str]]) -> List[str]:
+    """
+    오렌지식당/학생회관식당용.
+    일주일 표 전체에서 메뉴명을 뽑고 중복 제거한다.
+    """
+
     items = []
 
-    for line in lines:
-        if not line:
+    for row in rows[1:]:
+        for cell in row[1:]:
+            items.extend(split_cell_text(cell))
+
+    return unique_keep_order(items)
+
+
+def parse_date_label(date_text: str) -> Optional[str]:
+    match = re.search(r"(\d{2})월\s*(\d{1,2})일", date_text)
+
+    if not match:
+        return None
+
+    month = int(match.group(1))
+    day = int(match.group(2))
+
+    return f"{month:02d}-{day:02d}"
+
+
+def extract_main_today_menu(rows: List[List[str]], target_date: datetime) -> List[str]:
+    """
+    본관/교직원식당용.
+    오늘 날짜 행의 점심 메뉴를 우선 가져온다.
+    점심이 없으면 저녁 메뉴를 사용한다.
+    """
+
+    target_md = target_date.strftime("%m-%d")
+
+    for row in rows[1:]:
+        if not row:
             continue
 
-        if line in CATEGORY_WORDS:
+        row_md = parse_date_label(row[0])
+
+        if row_md != target_md:
             continue
 
-        if len(line) > 35:
-            continue
+        lunch_items = split_cell_text(row[1]) if len(row) > 1 else []
+        dinner_items = split_cell_text(row[2]) if len(row) > 2 else []
 
-        if any(word in line for word in ["운영", "공지", "식단 페이지", "확인"]):
-            continue
+        if lunch_items:
+            return lunch_items
 
-        items.append(line)
+        if dinner_items:
+            return dinner_items
 
-    return items
+        return []
+
+    return []
 
 
-def build_payload(url: str) -> Dict:
-    html = fetch_html(url)
-    lines = html_to_lines(html)
-    sections = split_food_sections(lines)
+def build_menu_text(items: List[str]) -> str:
+    items = unique_keep_order(items)
 
+    if not items:
+        return "오늘 등록된 식단이 없습니다."
+
+    return "\n".join(items)
+
+
+def build_payload() -> Dict:
     now = datetime.now(KST)
     today = now.strftime("%Y-%m-%d")
+
+    crawl_date_raw = os.getenv("CRAWL_DATE", "").strip()
+
+    if crawl_date_raw:
+        target_date = datetime.strptime(crawl_date_raw, "%Y-%m-%d").replace(tzinfo=KST)
+    else:
+        target_date = now
 
     restaurants: Dict[str, Dict] = {}
     random_items: List[str] = []
 
-    for meta, section in zip(RESTAURANTS, sections):
-        cleaned = normalize_section(section)
+    for key in ["student", "orange", "main"]:
+        meta = RESTAURANTS[key]
+        url = RESTAURANT_URLS[key]
 
-        # 본관/교직원식당 메뉴가 페이지에서 비어 있으면 fallback 메뉴 사용
-        if meta["key"] == "main" and len(extract_menu_items(cleaned)) == 0:
-            cleaned = MAIN_FALLBACK_LUNCH_MENU[:]
+        html = fetch_html(url)
+        rows = get_table_rows(html)
 
-        menu_text = build_menu_text(cleaned)
+        if key == "main":
+            items = extract_main_today_menu(rows, target_date)
+        else:
+            items = extract_static_menu(rows)
 
-        restaurants[meta["key"]] = {
-            "name": meta["app_name"],
-            "sourceName": meta["source_name"],
+        menu_text = build_menu_text(items)
+
+        restaurants[key] = {
+            "name": meta["name"],
+            "sourceName": meta["sourceName"],
             "location": meta["location"],
-            "openTime": meta["default_open_time"],
+            "openTime": meta["openTime"],
             "menuText": menu_text,
             "lastUpdated": today,
             "sourceUrl": url,
         }
 
-        for item in extract_menu_items(cleaned):
-            random_items.append(f'{meta["app_name"]} - {item}')
+        for item in items:
+            random_items.append(f'{meta["name"]} - {item}')
 
+    random_items = unique_keep_order(random_items)
     random_menus = {}
 
-    for i, item in enumerate(random_items[:30], start=1):
+    for i, item in enumerate(random_items[:40], start=1):
         random_menus[str(i)] = item
 
     if not random_menus:
@@ -546,11 +483,13 @@ def build_payload(url: str) -> Dict:
     return {
         "restaurants": restaurants,
         "randomMenus": random_menus,
+        "ingredients": STATIC_INGREDIENTS,
         "meta": {
-            "source": "선문대학교 식단 페이지",
-            "sourceUrl": url,
+            "source": "선문대학교 금주의식단 페이지",
+            "sourceUrls": RESTAURANT_URLS,
             "lastUpdated": today,
             "updatedAtKST": now.isoformat(timespec="seconds"),
+            "targetDate": target_date.strftime("%Y-%m-%d"),
             "randomMenuCount": len(random_menus),
             "notice": "식단과 운영시간은 학교 사정에 따라 변경될 수 있습니다.",
         },
@@ -566,9 +505,6 @@ def upload_to_firebase(
         raise ValueError("FIREBASE_DATABASE_URL 환경변수가 비어 있습니다.")
 
     database_url = database_url.rstrip("/")
-
-    # App Inventor/Web 컴포넌트에서 /sunmoon 아래 데이터를 읽도록 하기 위해
-    # Firebase 루트가 아니라 /sunmoon.json에 업로드한다.
     endpoint = f"{database_url}/sunmoon.json"
 
     params = {}
@@ -576,9 +512,6 @@ def upload_to_firebase(
     if auth_token:
         params["auth"] = auth_token
 
-    # 중요:
-    # PUT은 /sunmoon 아래 데이터를 오늘 크롤링 결과로 완전히 교체한다.
-    # 따라서 월요일 식단이 화요일에 남는 문제를 방지할 수 있다.
     response = requests.put(
         endpoint,
         params=params,
@@ -593,11 +526,10 @@ def upload_to_firebase(
 
 
 def main() -> None:
-    url = os.getenv("SUNMOON_FOOD_URL", DEFAULT_URL)
     output_json = Path(os.getenv("OUTPUT_JSON", "outputs/sunmoon_food_latest.json"))
     dry_run = os.getenv("DRY_RUN", "").strip() == "1"
 
-    payload = build_payload(url)
+    payload = build_payload()
 
     output_json.parent.mkdir(parents=True, exist_ok=True)
     output_json.write_text(
